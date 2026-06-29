@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tetris</title>
+
+    <style>
+    *{
+         margin: 0;
+         padding: 0;
+         box-sizing: border-box;
+     }
+
+     body{
+        background: #0d0d1a;
+        color: #e0e0ff;
+        font-family: 'Courier New', Courier, monospace;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+     }
+       
+     .game-wrapper {
+        display: flex;
+        gap: 24px;
+        align-items: flex-start;
+     }
+
+     .canvas-container{
+        position: relative;
+     }
+
+     #gameCanvas {
+        display: block;
+        border: 2px solid #4444aa;
+     }
+
+     .side-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        min-width: 140px;
+     }
+
+     .panel-box {
+        background: #111130;
+        border: 1px solid #33336688;
+        border-radius: 6px;
+        padding: 14px;
+     }  
+
+     .panel-box h3 {
+        font-size: 11px;
+        letter-spacing: 3px;
+        color: #6666cc;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+     }
+
+     .panel-box span{
+        font-size: 28px;
+        font-weight: bold;
+        color: #aaaaff;
+     }
+
+     .overlay {
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background:rgba(5, 5, 20, 0.90) ;
+        border: 2px solid #4444aa;
+        border-radius: 8px;
+        padding: 32px 40px;
+        text-align: center;
+     }
+
+     .overlay.visivel{
+        display: flex;
+     }
+     .overlay h2{
+        font-size: 22px;
+        letter-spacing: 4px;
+        color: #cc44cc;
+     }
+     .overlay p{
+        color: #8888aa;
+        font-size: 13px;
+     }
+
+     .overlay button{
+        background: transparent ;
+        border:1px solid #6666cc ;
+        color: #aaaaff ;
+        font-family: inherit ;
+        font-size: 13px;
+        letter-spacing: 2px ;
+        padding: 8px 24px;
+        cursor: pointer;
+        border-radius: 4px ;
+     }
+
+     .overlay button:hover {
+        background: #33339944;
+     }
+
+    </style>
+
+</head>
+
+<body>
+    
+<div class="game-wrapper">
+    <div class="canvas-container">
+        <canvas id="gameCanvas" width="300" height="600"></canvas>
+
+        <div class="overlay" id="overlay">
+            <h2 id="overlayTitle">GAME OVER</h2>
+            <p id="overlayMsg">Pontuação Final: <strong id="overlayScore">0</strong></p>
+            <button id="overlayBtn">JOGAR NOVAMENTE</button>
+        </div>
+    </div>    
+
+        <div class="side-panel">
+            <div class="panel-box">
+                <h3>Pontuação</h3>
+                <span id="scoreEl">0</span>
+            </div>
+
+            <div class="panel-box">
+                <h3>Nível</h3>
+                <span id="levelEl">1</span>
+            </div>
+
+            <div class="panel-box">
+                <h3>Linhas</h3>
+                <span id="linesEl">0</span>
+            </div>
+
+            <div class="panel-box">
+                <h3>Próxima</h3>
+                <canvas id="nextCanvas" width="100" height="100"></canvas>
+            </div>
+        </div>
+</div>
+
+    <script>
+
+        const COLS = 10;
+        const ROWS = 20;
+        const BLOCK = 30;
+        const CORES = [
+            null,
+            '#00f5ff',
+            '#f5d800',
+            '#cc44ff',
+            '#00dd44',
+            '#ff2244',
+            '#0066ff',
+            '#ff8800',
+        ];
+        const PECAS = [
+            [[0,0,0,0],
+             [1,1,1,1],
+             [0,0,0,0],
+             [0,0,0,0]],
+
+            [[2,2],
+             [2,2]],
+
+            [[0,3,0],
+             [3,3,3],
+             [0,0,0]],
+             
+            [[0,4,4],
+             [4,4,0],
+             [0,0,0]],
+             
+             [[5,5,0],
+              [0,5,5],
+              [0,0,0]],
+
+             [[6,0,0],
+              [6,6,6],
+              [0,0,0]],
+              
+              [[0,0,7],
+               [7,7,7],
+               [0,0,0]],
+        ];
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const nextCanvas = document.getElementById('nextCanvas');
+        const nextCtx = nextCanvas.getContext('2d');
+
+        const scoreEl = document.getElementById('scoreEl')
+        const levelEl = document.getElementById('levelEl')
+        const linesEl = document.getElementById('linesEl')
+
+        const overlay = document.getElementById('overlay')
+        const overlayTitle = document.getElementById('overlayTitle')
+        const overlayScore = document.getElementById('overlayScore')
+        const overlayBtn = document.getElementById('overlayBtn')
+
+        let tabuleiro;
+        let pontuacao;
+        let nivel;
+        let linhas;
+        let pecaAtual;
+        let proximaPeca;
+        let gameOver;
+        let pausado;
+        let dropInterval;
+        let dropCounter;
+        let ultimoTempo;
+        
+        function criarTabuleiro(){
+            return Array.from({ length:ROWS}, () => new Array(COLS).fill(0));
+        }
+
+        function pecaAleatoria() {
+    const indice = Math.floor(Math.random() * PECAS.length);
+    let forma = PECAS[indice].map(linha => [...linha]);
+
+    const giros = Math.floor(Math.random() * 4); // 0, 1, 2 ou 3 rotações
+    for (let i = 0; i < giros; i++) {
+        forma = rotacionar(forma);
+    }
+
+    return {
+        forma: forma,
+        x: Math.floor(COLS / 2) - Math.floor(forma[0].length / 2),
+        y: 0,
+    };
+}
+
+        function colide(peca, tab, px = peca.x, py = peca.y){
+            for (let lin = 0; lin < peca.forma.length; lin++){
+                for(let col = 0; col < peca.forma[lin].length; col++){
+
+                    if (!peca.forma[lin][col]) continue
+
+                    const novoX = px + col;
+                    const novoY = py + lin;
+
+                    if (novoX < 0 || novoX >= COLS) return true;
+                    if (novoY >= ROWS) return true;
+                    if (novoY >= 0 && tab [novoY][novoX]) return true;
+                }
+            }
+            return false;
+        }
+
+        function fixarPeca(){
+            pecaAtual.forma.forEach((linha, l) => {
+                linha.forEach((valor, c) => {
+                    if (valor) {
+                        tabuleiro[pecaAtual.y + l][pecaAtual.x + c] = valor;
+                    }
+                });
+            });
+        }
+
+        function limparLinhas() {
+            let limpas = 0;
+
+            for (let lin = ROWS - 1; lin >= 0; lin--) {
+                if (tabuleiro[lin].every(cel => cel !== 0 )){
+                    tabuleiro.splice(lin, 1);
+                    limpas++;
+                    lin++; 
+                    tabuleiro.unshift(new Array(COLS).fill(0));
+                }
+            }
+
+            return limpas;
+        }
+
+        function atualizarHUD() {
+            scoreEl.textContent = pontuacao;
+            levelEl.textContent = nivel
+            linesEl.textContent = linhas
+        }
+
+        function travarPeca() {
+            fixarPeca();
+            const limpas = limparLinhas();
+
+            if (limpas > 0){
+                const tabela = [0, 100, 300, 500, 800];
+                pontuacao += tabela[limpas] * nivel;
+                linhas += limpas;
+                nivel = Math.floor(linhas / 10) + 1;
+                dropInterval = Math.max(100, 1000 - (nivel - 1) * 80);
+            }
+
+            pecaAtual = proximaPeca;
+            proximaPeca = pecaAleatoria();
+
+            if (colide(pecaAtual, tabuleiro)) {
+                ativarGameOver();
+            }
+            
+            atualizarHUD();
+        }
+
+        function ativarGameOver() {
+            gameOver = true;
+            overlayTitle.textContent = 'GAME OVER';
+            overlayScore.textContent = pontuacao;
+            overlay.classList.add('visivel');
+        }
+
+        function alternarPausa() {
+            pausado = !pausado;
+            if (pausado) {
+                overlayTitle.textContent = 'PAUSADO';
+                overlayScore.textContent = pontuacao;
+                overlay.classList.add('visivel');
+          } else {
+                overlay.classList.remove('visivel');
+                ultimoTempo = performance.now();
+                requestAnimationFrame(gameLoop);
+           }
+        }             
+        
+        function iniciar() {
+            tabuleiro     = criarTabuleiro();
+            pontuacao     = 0;
+            nivel         = 1;
+            linhas        = 0;
+            dropInterval  = 1000;
+            dropCounter   = 0;
+            ultimoTempo   = performance.now();
+            gameOver      = false;
+            pausado       = false;
+            proximaPeca   = pecaAleatoria();
+            pecaAtual     = pecaAleatoria();
+
+            overlay.classList.remove('visivel');
+            atualizarHUD();
+            requestAnimationFrame(gameLoop);
+        }
+
+            function gameLoop(timestamp) {
+                if (gameOver || pausado) return;
+
+                const delta = timestamp - ultimoTempo;
+                ultimoTempo = timestamp;
+                dropCounter += delta;
+
+                if (dropCounter >= dropInterval) {
+                    if (!colide(pecaAtual, tabuleiro, pecaAtual.x, pecaAtual.y + 1)) {
+                       pecaAtual.y++;
+                    } else {
+                        travarPeca();
+                    }
+                    dropCounter = 0;
+               }
+
+               desenhar();
+               requestAnimationFrame(gameLoop);
+            }        
+
+        function desenhar() {
+
+            ctx.fillStyle = '#080814';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            tabuleiro.forEach((linha ,lin) => {
+                linha.forEach((valor, col) => {
+                    if (valor) {
+                        ctx.fillStyle = CORES[valor];
+                        ctx.fillRect(col * BLOCK + 1, lin * BLOCK + 1, BLOCK - 2, BLOCK - 2);
+                    }
+                });
+            });
+
+            pecaAtual.forma.forEach((linha,li) => {
+                linha.forEach((valor, col) => {
+                    if (valor) {
+                        ctx.fillStyle = CORES[valor];
+                        ctx.fillRect(
+                            (pecaAtual.x + col) * BLOCK + 1,
+                            (pecaAtual.y + li) * BLOCK + 1,
+                            BLOCK - 2, BLOCK - 2
+                        );
+                    }
+                });
+            });
+            desenharProxima();
+        }    
+    
+        function desenharProxima() {
+            nextCtx.fillStyle = '#080814';
+            nextCtx.fillRect(0, 0, nextCanvas.width, nextCanvas.height);
+
+            const mini = 20;
+            const forma = proximaPeca.forma;
+            const offsetX = Math.floor((nextCanvas.width / mini - forma[0].length) / 2);
+            const offsetY = Math.floor((nextCanvas.height / mini - forma.length) / 2);
+            
+            forma.forEach((linha, li) => {
+                linha.forEach((valor, col) => {
+                    if (valor) {
+                        nextCtx.fillStyle = CORES[valor];
+                        nextCtx.fillRect(
+                            (offsetX + col) * mini + 1,
+                            (offsetY + li) * mini + 1,
+                            mini - 2, mini - 2 
+                        );
+                    }
+                });
+            });
+          }
+
+          function rotacionar(forma) {
+    const N = forma.length;
+    const M = forma[0].length;
+    const nova = Array.from({ length: M }, () => new Array(N).fill(0));
+    for (let lin = 0; lin < N; lin++) {
+        for (let col = 0; col < M; col++) {
+            nova[col][N - 1 - lin] = forma[lin][col];
+        }
+    }
+    return nova;
+}
+
+function tentarRotacionar() {
+    const formaOriginal = pecaAtual.forma;
+    pecaAtual.forma = rotacionar(pecaAtual.forma);
+
+    if (!colide(pecaAtual, tabuleiro)) return; // sem colisão, ótimo!
+
+    pecaAtual.x++;                              // tenta empurrar pra direita
+    if (!colide(pecaAtual, tabuleiro)) return;
+
+    pecaAtual.x -= 2;                           // tenta empurrar pra esquerda
+    if (!colide(pecaAtual, tabuleiro)) return;
+
+    pecaAtual.x++;                              // desiste, desfaz tudo
+    pecaAtual.forma = formaOriginal;
+}
+
+        document.addEventListener('keydown', (e) => {
+            if (gameOver) return;
+
+                       if (e.code === 'ArrowLeft') {
+                if (!colide(pecaAtual, tabuleiro, pecaAtual.x - 1, pecaAtual.y))
+                    pecaAtual.x--;
+            }
+                        if (e.code === 'ArrowRight') {
+                if (!colide(pecaAtual, tabuleiro, pecaAtual.x + 1, pecaAtual.y))
+                    pecaAtual.x++;
+            }
+
+                  if (e.code === 'ArrowUp') tentarRotacionar();    
+                        if (e.code === 'ArrowDown') {
+                if (!colide(pecaAtual, tabuleiro, pecaAtual.x, pecaAtual.y + 1))
+                    pecaAtual.y++;
+           
+            }
+                        if (e.code === 'Space') {
+                            e.preventDefault();
+                while (!colide(pecaAtual, tabuleiro, pecaAtual.x, pecaAtual.y + 1))
+                    pecaAtual.y++;
+                travarPeca();
+            }
+            if (e.code === 'KeyP') alternarPausa();                        
+                    
+        });
+
+        overlayBtn.addEventListener('click', () => {
+            if (gameOver) {
+                iniciar();
+             } else { 
+                alternarPausa();
+            }
+        });
+        
+        iniciar();
+
+    </script>
+
+</body>
+</html>
